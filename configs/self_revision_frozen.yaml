@@ -1,0 +1,6 @@
+system: self_revision
+model: Qwen/Qwen2.5-1.5B-Instruct
+split: test
+max_tokens: 512
+seed: 0
+# trained: set solver_lora (the reviser turn reuses it)

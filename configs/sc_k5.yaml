@@ -1,0 +1,8 @@
+system: sc
+model: Qwen/Qwen2.5-1.5B-Instruct
+split: test
+k: 5
+temperature: 0.7
+top_p: 0.95
+max_tokens: 512
+seed: 0
