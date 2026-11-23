@@ -28,8 +28,8 @@ One script, `eval/run_eval.py`, selected by `--baseline`:
 |---|------|---------|----------|-----------------------|--------|
 | 1 | Zero-shot CoT | base model | solver | 1 | Matthew |
 | 2 | Frozen solver–reviser | base model | solver → reviser | 2 | Supanart |
-| 3 | Single-agent GRPO | `--adapter` | solver | 1 | Matthew |
-| 4 | Single-agent GRPO + self-revision | `--adapter` (both steps) | solver → reviser | 2 | Matthew |
+| 3 | Single-agent GRPO | `--adapter` | solver | 1 | Andy |
+| 4 | Single-agent GRPO + self-revision | `--adapter` (both steps) | solver → reviser | 2 | TBD |
 
 Run from the repo root:
 
