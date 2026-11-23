@@ -1,18 +1,33 @@
-"""Metrics over run_eval JSONL logs.
+"""Metrics over run_eval outputs. A run is a directory (predictions JSONL +
+config.json) or a JSONL file. Figures live in eval/plot_results.py.
 
-    python -m eval.metrics outputs/*.jsonl                       # summary table
-    python -m eval.metrics outputs/*.jsonl --compare A.jsonl B.jsonl
-    python -m eval.metrics outputs/*.jsonl --plot outputs/acc_vs_tokens.png
+    python -m eval.metrics outputs/*/                            # summary table
+    python -m eval.metrics outputs/*/ --compare outputs/b1_test outputs/b2_test
 """
 import argparse
+import glob
 import json
 import math
 import os
 import random
 
 
+def run_jsonl(path):
+    """The JSONL file of a run directory (or the path itself if it is a file)."""
+    if not os.path.isdir(path):
+        return path
+    files = sorted(glob.glob(os.path.join(path, "*.jsonl")))
+    if len(files) != 1:
+        raise ValueError(f"{path}: expected one .jsonl file, found {len(files)}")
+    return files[0]
+
+
+def run_name(path):
+    return os.path.basename(os.path.normpath(path)).removesuffix(".jsonl")
+
+
 def load_run(path):
-    with open(path) as f:
+    with open(run_jsonl(path)) as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
@@ -107,7 +122,7 @@ def method_rates(rows):
 def summarize(path, n_boot=1000):
     rows = load_run(path)
     lo, hi = bootstrap_ci(rows, n_boot)
-    out = {"run": os.path.basename(path).removesuffix(".jsonl"), "n": len(rows),
+    out = {"run": run_name(path), "n": len(rows),
            "acc": accuracy(rows), "ci_lo": lo, "ci_hi": hi,
            "gen_tokens": mean_gen_tokens(rows), "methods": method_rates(rows)}
     flips = flip_rates(rows)
@@ -133,31 +148,11 @@ def print_summary(summaries):
                   f"(of {f['n_solver_right']}), no_change={f['no_change']:.3f}")
 
 
-def plot_acc_vs_tokens(summaries, path):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(6, 4))
-    for s in summaries:
-        ax.errorbar(s["gen_tokens"], s["acc"],
-                    yerr=[[s["acc"] - s["ci_lo"]], [s["ci_hi"] - s["acc"]]],
-                    fmt="o", capsize=3)
-        ax.annotate(s["run"], (s["gen_tokens"], s["acc"]), fontsize=7,
-                    xytext=(4, 4), textcoords="offset points")
-    ax.set_xlabel("Mean generated tokens per problem")
-    ax.set_ylabel("Accuracy")
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    print(f"saved {path}")
-
-
 def main(argv=None):
     p = argparse.ArgumentParser()
-    p.add_argument("runs", nargs="+", help="JSONL files from run_eval")
+    p.add_argument("runs", nargs="+", help="run directories (or JSONL files) from run_eval")
     p.add_argument("--compare", nargs=2, metavar=("A", "B"),
-                   help="paired comparison of two JSONL runs")
-    p.add_argument("--plot", help="save an accuracy-vs-tokens plot here")
+                   help="paired comparison of two runs")
     p.add_argument("--n_boot", type=int, default=1000)
     args = p.parse_args(argv)
 
@@ -169,8 +164,6 @@ def main(argv=None):
         diff, lo, hi = paired_bootstrap(a, b, args.n_boot)
         print(f"\nB - A = {diff:+.4f} [{lo:+.4f}, {hi:+.4f}] (paired bootstrap); "
               f"McNemar: B-only {b_only}, A-only {a_only}, p={pval:.4g}")
-    if args.plot:
-        plot_acc_vs_tokens(summaries, args.plot)
 
 
 if __name__ == "__main__":

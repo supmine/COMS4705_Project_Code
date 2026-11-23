@@ -8,8 +8,8 @@
 | 4 | single-agent GRPO + self-rev | --adapter (both steps)       | solver -> reviser|
 
 Generation is staged: all solver outputs first, then all reviser prompts in one
-more batch. Writes outputs/<run_id>.jsonl (one line per problem) and
-outputs/<run_id>.json (config + total cost).
+more batch. Writes the run directory outputs/<run_id>/ with predictions.jsonl
+(one line per problem) and config.json (config, system, group, total cost).
 
     python -m eval.run_eval --baseline 1 --split dev --limit 20     # smoke test
     python -m eval.run_eval --baseline 2
@@ -28,10 +28,10 @@ from common.data import records
 from common.prompts import render, reviser_messages, solver_messages
 
 BASELINES = {
-    1: {"name": "cot", "adapter": False, "revise": False},
-    2: {"name": "solver_reviser", "adapter": False, "revise": True},
-    3: {"name": "grpo", "adapter": True, "revise": False},
-    4: {"name": "grpo_self_revision", "adapter": True, "revise": True},
+    1: {"name": "cot", "group": "frozen", "adapter": False, "revise": False},
+    2: {"name": "solver_reviser", "group": "frozen", "adapter": False, "revise": True},
+    3: {"name": "grpo", "group": "single_agent", "adapter": True, "revise": False},
+    4: {"name": "grpo_self_revision", "group": "single_agent", "adapter": True, "revise": True},
 }
 
 
@@ -47,7 +47,8 @@ def parse_args(argv=None):
     p.add_argument("--max_lora_rank", type=int, default=64)
     p.add_argument("--dtype", default="auto", help="'half' on GPUs without bf16 (T4)")
     p.add_argument("--gpu_memory_utilization", type=float, default=0.9)
-    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--seed", type=int, default=0,
+                   help="for trained adapters, pass the training seed so plots can average seeds")
     p.add_argument("--run_id")
     p.add_argument("--out_dir", default="outputs")
     args = p.parse_args(argv)
@@ -73,8 +74,8 @@ def parse_args(argv=None):
 
 
 def default_run_id(args):
-    size = args.model.split("-")[-2].lower() if "-" in args.model else "model"
-    return f"b{args.baseline}_{BASELINES[args.baseline]['name']}_{size}_gsm8k_{args.split}"
+    run_id = f"b{args.baseline}_{args.split}"
+    return run_id if args.seed == 0 else f"{run_id}_seed{args.seed}"
 
 
 def git_commit():
@@ -161,17 +162,19 @@ def main(argv=None):
 
     rows, cost = run(args, problems, runner)
 
-    os.makedirs(args.out_dir, exist_ok=True)
-    base = os.path.join(args.out_dir, args.run_id)
-    with open(base + ".jsonl", "w") as f:
+    run_dir = os.path.join(args.out_dir, args.run_id)
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "predictions.jsonl"), "w") as f:
         for row in rows:
             f.write(json.dumps(row) + "\n")
     acc = sum(r["final_correct"] for r in rows) / len(rows)
-    meta = {"config": vars(args), "git_commit": git_commit(), "n": len(rows),
-            "accuracy": acc, "cost": asdict(cost)}
-    with open(base + ".json", "w") as f:
+    spec = BASELINES[args.baseline]
+    meta = {**vars(args), "system": spec["name"], "group": spec["group"],
+            "git_commit": git_commit(), "n": len(rows), "accuracy": acc,
+            "cost": asdict(cost)}
+    with open(os.path.join(run_dir, "config.json"), "w") as f:
         json.dump(meta, f, indent=2)
-    print(f"{args.run_id}: accuracy {acc:.4f} on {len(rows)} problems -> {base}.jsonl")
+    print(f"{args.run_id}: accuracy {acc:.4f} on {len(rows)} problems -> {run_dir}/")
 
 
 if __name__ == "__main__":
