@@ -17,8 +17,8 @@ def test_unclosed_boxed_falls_back():
     assert extract_answer(r"answer \boxed{12") == ("12", "last_number")
 
 
-def test_hash_and_last_number():
-    assert extract_answer("work...\n#### 72") == ("72", "hash")
+def test_last_number_fallback():
+    assert extract_answer("work...\n#### 72") == ("72", "last_number")
     assert extract_answer("so she has 5 apples, then 7") == ("7", "last_number")
     assert extract_answer("no digits here") == (None, "none")
 
@@ -29,6 +29,12 @@ def test_hash_and_last_number():
 ])
 def test_normalize(raw, norm):
     assert normalize(raw) == norm
+
+
+def test_numeric_comparison():
+    assert is_correct(r"\boxed{18.0}", "18")
+    assert is_correct(r"\boxed{\$1,000.00}", "1000")
+    assert is_correct(r"\boxed{50\%}", "50")
 
 
 def test_is_correct():

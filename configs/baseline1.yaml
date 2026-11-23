@@ -1,4 +1,4 @@
-system: cot
+baseline: 1
 model: Qwen/Qwen2.5-1.5B-Instruct
 split: test
 max_tokens: 512

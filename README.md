@@ -16,27 +16,30 @@ training reward and the eval accuracy are the same function.
 
 ```
 pip install -r requirements.txt
-pytest tests/          # includes: every GSM8K gold solution grades 100%
+pytest tests/          # gold solutions grade 100%; rendered prompt matches Qwen's template
 ```
 
-## Baselines (GSM8K test, Qwen2.5-1.5B-Instruct)
+## Baselines (GSM8K, Qwen2.5-1.5B-Instruct)
+
+One script, `eval/run_eval.py`, selected by `--baseline`:
+
+| # | Name | Weights | Pipeline | Generations / problem | Run by |
+|---|------|---------|----------|-----------------------|--------|
+| 1 | Zero-shot CoT | base model | solver | 1 | Matthew |
+| 2 | Frozen solver–reviser | base model | solver → reviser | 2 | Supanart |
+| 3 | Single-agent GRPO | `--adapter` | solver | 1 | Matthew |
+| 4 | Single-agent GRPO + self-revision | `--adapter` (both steps) | solver → reviser | 2 | Matthew |
 
 Run from the repo root:
 
 ```
-python -m eval.run_eval --config configs/cot.yaml
-for k in 1 3 5 8; do python -m eval.run_eval --config configs/sc_k$k.yaml; done
-python -m eval.run_eval --config configs/solver_reviser_frozen.yaml
-python -m eval.run_eval --config configs/self_revision_frozen.yaml
-python -m eval.run_eval --system cot --split dev --limit 20   # smoke test
+python -m eval.run_eval --baseline 1 --split dev --limit 20     # smoke test
+python -m eval.run_eval --config configs/baseline2.yaml
+python -m eval.run_eval --baseline 4 --adapter <path/to/single_grpo_lora>
 ```
 
-| `--system`       | what it does                                   | generations / problem |
-|------------------|------------------------------------------------|-----------------------|
-| `cot`            | solver only, greedy                            | 1 |
-| `sc`             | solver samples `--k`, majority vote            | k |
-| `solver_reviser` | solver → reviser (`--solver_lora`, `--reviser_lora`) | 2 |
-| `self_revision`  | solver → reviser prompt with the solver's adapter | 2 |
+On a T4 (no bfloat16) add `--dtype half`. The script prints one rendered
+solver prompt at startup; it must start with Qwen's default system prompt.
 
 Each run writes `outputs/<run_id>.jsonl` (one line per problem) and
 `outputs/<run_id>.json` (config, git commit, total `Cost`).
@@ -46,19 +49,18 @@ Each run writes `outputs/<run_id>.jsonl` (one line per problem) and
 ```
 python -m eval.metrics outputs/*.jsonl --plot outputs/acc_vs_tokens.png
 python -m eval.metrics outputs/*.jsonl \
-    --compare outputs/cot_frozen_1.5b_gsm8k_test.jsonl outputs/solver_reviser_frozen_1.5b_gsm8k_test.jsonl
+    --compare outputs/b1_cot_1.5b_gsm8k_test.jsonl outputs/b2_solver_reviser_1.5b_gsm8k_test.jsonl
 ```
 
 Prints accuracy with a 95% bootstrap CI (1,000 resamples), mean generated
 tokens, extraction-method and truncation rates, and flip rates for
-solver/reviser runs. `--compare` adds a paired bootstrap and exact McNemar test.
+baselines 2 and 4. `--compare` adds a paired bootstrap and exact McNemar test.
 
 ## Sanity checks before trusting numbers
 
 1. `pytest tests/` passes (gold solutions score 100%).
 2. Zero-shot CoT is close to the Qwen2.5 technical report; far lower usually
    means a wrong chat template or the base model instead of `-Instruct`.
-3. `last_number` + `none` rate under ~5%; otherwise fix the prompt first.
+3. `last_number` + `none` rate under ~5%.
 4. Truncation (`finish_reason == "length"`) is low; otherwise raise `max_tokens`.
-5. SC at k=1 is close to CoT, and accuracy rises with k.
-6. Read 20 random JSONL lines by eye before sharing numbers.
+5. Read 20 random JSONL lines by eye before sharing numbers.
