@@ -1,10 +1,11 @@
 # Multi-agent RL on GSM8K — evaluation harness & baselines (COMS 4705)
 
 ```
-common/   shared by the whole team: prompts, answer checker, data, cost
+common/   shared by the whole team: prompts, answer checker, data + frozen split
+          (gsm8k_split_v1.json, made by make_gsm8k_split.py), cost
 eval/     run_eval.py (vLLM baselines + trained adapters), metrics.py, plot_results.py
 train/    single_grpo.py (Matthew), multi_grpo.py (Tiancheng)
-tests/    test_answer.py
+tests/    test_answer.py, test_prompts.py, test_data_split.py
 configs/  one YAML per run
 outputs/  one directory per run (not committed)
 colab_eval.ipynb  run one baseline on Colab, results saved to Drive
@@ -19,6 +20,25 @@ training reward and the eval accuracy are the same function.
 pip install -r requirements.txt
 pytest tests/          # gold solutions grade 100%; rendered prompt matches Qwen's template
 ```
+
+## Data split (GSM8K, frozen in `common/gsm8k_split_v1.json`)
+
+GSM8K only has train (7,473) and test (1,319), so we carve a dev set out of train:
+
+| split | size | what it is | allowed use |
+|-------|------|------------|-------------|
+| `train` | 6,973 | official train minus dev, in a **fixed order** | the only data any run trains on |
+| `dev` | 500 | held out from official train | checkpoint selection, hyperparameter tuning, sanity checks |
+| `test` | 1,319 | official test | **final numbers only**; never used to pick checkpoints or hyperparameters |
+
+* Rule: `perm = numpy.random.default_rng(0).permutation(7473)`; `dev = perm[:500]`, `train = perm[500:]` (same
+  membership and order as the original `train.shuffle(seed=0)`), frozen in the JSON so it cannot drift.
+* `qid` = row index in the original HF `openai/gsm8k` split (train/dev share the train index space; test has
+  its own). qids are stable across runs, so per-problem results can be joined (McNemar, flips, difficulty).
+* Training runs consume `common.data.train_stream(n)` **in order, without reshuffling**. Two runs with the same
+  number of training prompts see exactly the same problems; a longer run (e.g. the token-matched single-agent
+  run) sees a strict superset. Rules for trainers are in `train/README.md`.
+* No GSM8K test question appears verbatim in train (checked on whitespace/case-normalized text).
 
 ## Baselines (GSM8K, Qwen2.5-1.5B-Instruct)
 
