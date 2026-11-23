@@ -4,3 +4,4 @@ datasets
 pyyaml
 matplotlib
 pytest
+math-verify>=0.9

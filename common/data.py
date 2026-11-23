@@ -108,3 +108,82 @@ def load_gsm8k(dev_size=DEV_SIZE, seed=SEED):
     ds = load_dataset("openai/gsm8k", "main")
     spec = split_spec()
     return ds["train"].select(spec["train_order"]), ds["train"].select(spec["dev_ids"]), ds["test"]
+
+
+
+# ---------------------------------------------------------------- MATH (levels 3-5)
+# The original hendrycks/competition_math copy is script-based and no longer loads with current
+# `datasets`; this mirror has the full 7,500 train / 5,000 test problems, split by subject, with
+# `level` and `type` fields. The revision is pinned so membership cannot drift.
+#   qid  = "<subject>/<row index in that subject's HF split>"  (stable)
+#   dev  = 500 problems sampled (random.Random(0), independent of `datasets` versions) from the
+#          level 3-5 train problems; train = the remaining level 3-5 train problems
+#   test = every level 3-5 problem of the test split
+MATH_NAME = "EleutherAI/hendrycks_math"
+MATH_REVISION = "21a5633873b6a120296cce3e2df9d5550074f4a3"
+MATH_SUBJECTS = ["algebra", "counting_and_probability", "geometry", "intermediate_algebra",
+                 "number_theory", "prealgebra", "precalculus"]
+MATH_LEVELS = (3, 4, 5)
+
+DATASET_INFO = {
+    "gsm8k": {"dataset_name": "openai/gsm8k", "dataset_config": "main",
+              "dataset_revision": None, "split_name": SPLIT_NAME},
+    "math": {"dataset_name": MATH_NAME, "dataset_config": ",".join(MATH_SUBJECTS),
+             "dataset_revision": MATH_REVISION, "split_name": "math_l345_seed0"},
+}
+
+_MATH_RAW = {}
+
+
+def math_level(level_field):
+    """'Level 4' -> 4; 'Level ?' -> None."""
+    tail = level_field.split()[-1]
+    return int(tail) if tail.isdigit() else None
+
+
+def _math_raw(hf_split):
+    """All MATH rows of 'train' or 'test' as records (every level), in subject then row order."""
+    if hf_split not in _MATH_RAW:
+        from datasets import load_dataset
+        from common.answer import math_gold
+
+        rows = []
+        for subject in MATH_SUBJECTS:
+            ds = load_dataset(MATH_NAME, subject, split=hf_split, revision=MATH_REVISION)
+            for i, ex in enumerate(ds):
+                rows.append({"qid": f"{subject}/{i}", "question": ex["problem"],
+                             "gold": math_gold(ex["solution"]), "solution": ex["solution"],
+                             "level": math_level(ex["level"]), "subject": ex["type"]})
+        _MATH_RAW[hf_split] = rows
+    return _MATH_RAW[hf_split]
+
+
+def math_records(split, levels=MATH_LEVELS, dev_size=DEV_SIZE, seed=SEED):
+    """List of {"qid", "split", "question", "gold", "solution", "level", "subject"}
+    for 'train' | 'dev' | 'test', restricted to `levels`."""
+    import random
+
+    keep = set(levels)
+    if split == "test":
+        rows = [r for r in _math_raw("test") if r["level"] in keep]
+    elif split in ("dev", "train"):
+        pool = [r for r in _math_raw("train") if r["level"] in keep]
+        dev_ids = set(random.Random(seed).sample(range(len(pool)), dev_size))
+        rows = [r for i, r in enumerate(pool) if (i in dev_ids) == (split == "dev")]
+    else:
+        raise ValueError(f"unknown split {split!r}")
+    return [{**r, "split": split} for r in rows]
+
+
+def level_counts(rows):
+    counts = {}
+    for r in rows:
+        counts[r["level"]] = counts.get(r["level"], 0) + 1
+    return dict(sorted(counts.items()))
+
+
+if __name__ == "__main__":
+    # python -m common.data  -> MATH problems per level in dev and test
+    for split in ("dev", "test"):
+        rows = math_records(split)
+        print(f"MATH {split}: {len(rows)} problems, per level {level_counts(rows)}")

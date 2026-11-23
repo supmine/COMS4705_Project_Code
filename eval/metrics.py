@@ -119,6 +119,34 @@ def method_rates(rows):
     return rates
 
 
+def level_summary(rows, n_boot=1000):
+    """{level: {n, acc, ci_lo, ci_hi}} for rows that carry a MATH level; {} otherwise."""
+    by_level = {}
+    for r in rows:
+        if r.get("level") is not None:
+            by_level.setdefault(r["level"], []).append(r)
+    out = {}
+    for level in sorted(by_level):
+        rs = by_level[level]
+        lo, hi = bootstrap_ci(rs, n_boot)
+        out[level] = {"n": len(rs), "acc": accuracy(rs), "ci_lo": lo, "ci_hi": hi}
+    return out
+
+
+def decided_by_rates(rows):
+    """MATH only: share of graded turns decided by each checker path
+    (string | symbolic | unparsed | timeout | none), plus the timed-out answers."""
+    turns = [(r, t) for r in rows for t in r["turns"] if "decided_by" in t]
+    if not turns:
+        return None, []
+    counts = {}
+    for _, t in turns:
+        counts[t["decided_by"]] = counts.get(t["decided_by"], 0) + 1
+    timeouts = [(r["qid"], t["agent"], t.get("pred_raw"), r["gold"])
+                for r, t in turns if t["decided_by"] == "timeout"]
+    return {k: c / len(turns) for k, c in sorted(counts.items())}, timeouts
+
+
 def summarize(path, n_boot=1000):
     rows = load_run(path)
     lo, hi = bootstrap_ci(rows, n_boot)
@@ -128,6 +156,12 @@ def summarize(path, n_boot=1000):
     flips = flip_rates(rows)
     if flips:
         out["flips"] = flips
+    levels = level_summary(rows, n_boot)
+    if levels:
+        out["levels"] = levels
+    decided, timeouts = decided_by_rates(rows)
+    if decided:
+        out["decided_by"], out["timeouts"] = decided, timeouts
     return out
 
 
@@ -146,6 +180,16 @@ def print_summary(summaries):
             print(f"{s['run']}: P(wrong->right)={f['wrong_to_right']:.3f} "
                   f"(of {f['n_solver_wrong']}), P(right->wrong)={f['right_to_wrong']:.3f} "
                   f"(of {f['n_solver_right']}), no_change={f['no_change']:.3f}")
+    for s in summaries:
+        for level, v in s.get("levels", {}).items():
+            print(f"{s['run']} level {level}: acc {v['acc']:.4f} "
+                  f"[{v['ci_lo']:.4f}, {v['ci_hi']:.4f}] (n={v['n']})")
+        if "decided_by" in s:
+            rates = ", ".join(f"{k} {v:.3f}" for k, v in s["decided_by"].items())
+            print(f"{s['run']}: checker path (share of turns): {rates}; "
+                  f"timeouts: {len(s['timeouts'])}")
+            for qid, agent, pred, gold in s["timeouts"]:
+                print(f"  timeout qid={qid} {agent}: pred={pred!r} gold={gold!r}")
 
 
 def main(argv=None):
