@@ -1,0 +1,27 @@
+# Single-agent GRPO, token-matched to multi.yaml: G doubled (16) instead of
+# the steps, so it sees the same problems and makes the same number of updates.
+# Only run_name, mode and group_size differ between the three configs.
+run_name: single_token_matched
+mode: single
+group_size: 16            # G
+batch_problems: 16        # B
+steps: 200
+seed: 0
+model: Qwen/Qwen2.5-1.5B-Instruct
+dtype: bfloat16
+lora: {r: 16, alpha: 32, dropout: 0.05,
+       target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]}
+lr: 1.0e-5
+warmup_steps: 10
+max_grad_norm: 1.0
+beta: 0.0
+loss_agg: token_mean
+reward_mode: team
+reward_require_boxed: true
+temperature: 1.0
+top_p: 1.0
+max_new_tokens: 1024
+gpu_memory_utilization: 0.35
+eval_every: 25
+eval_dev_size: 200
+save_every: 50
